@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Frame Blend for Premiere Pro 2020+ (CEP 9 and later): a hidden companion that starts with
+     Premiere and sets new high-frame-rate clips up for frame blending (the
+     Frame Blend effect, Time Interpolation set to Frame Blending). No window:
+     each clip's Time Interpolation switches the blend.
+     Installed signed (tools/sign_panel.ps1). -->
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.frameblend.panel" ExtensionBundleVersion="1.4.0"
+                   ExtensionBundleName="Frame Blend" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <ExtensionList>
+    <Extension Id="com.frameblend.panel.auto" Version="1.4.0" />
+  </ExtensionList>
+  <ExecutionEnvironment>
+    <HostList>
+      <Host Name="PPRO" Version="[14.0,99.9]" />
+    </HostList>
+    <LocaleList>
+      <Locale Code="All" />
+    </LocaleList>
+    <RequiredRuntimeList>
+      <RequiredRuntime Name="CSXS" Version="9.0" />
+    </RequiredRuntimeList>
+  </ExecutionEnvironment>
+  <DispatchInfoList>
+    <Extension Id="com.frameblend.panel.auto">
+      <DispatchInfo>
+        <Resources>
+          <MainPath>./auto.html</MainPath>
+          <ScriptPath>./host/frameblend.jsx</ScriptPath>
+        </Resources>
+        <Lifecycle>
+          <AutoVisible>false</AutoVisible>
+          <StartOn>
+            <Event>com.adobe.csxs.events.ApplicationActivate</Event>
+            <Event>applicationActivate</Event>
+          </StartOn>
+        </Lifecycle>
+        <UI>
+          <Type>Custom</Type>
+          <Geometry>
+            <Size>
+              <Height>1</Height>
+              <Width>1</Width>
+            </Size>
+          </Geometry>
+        </UI>
+      </DispatchInfo>
+    </Extension>
+  </DispatchInfoList>
+</ExtensionManifest>

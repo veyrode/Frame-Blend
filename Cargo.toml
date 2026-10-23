@@ -1,0 +1,16 @@
+[package]
+name = "frame_blend"
+version = "0.2.0"
+edition = "2021"
+description = "Exact frame blending core for the Frame Blend Premiere Pro and After Effects plugin"
+license = "MIT"
+
+[lib]
+name = "frame_blend"
+path = "src/lib.rs"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+
+[profile.release]
+codegen-units = 1

@@ -1,0 +1,15 @@
+/build/
+/target/
+.vs/
+*.pdb
+*.ilk
+*.obj
+*.ipch
+__pycache__/
+*.pyc
+
+# Downloaded separately (see docs/plugin-build.md); not redistributable or too large.
+/dependence/sdks/Adobe/
+/dependence/sdks/ZXPSignCmd*/
+/dependence/sdks/FFmpeg_8.1_lgpl_win64/bin/
+/dependence/sdks/**/*.zip

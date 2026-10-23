@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="330" viewBox="0 0 920 330" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <rect width="920" height="330" rx="10" fill="#ffffff"/>
+  <text x="30" y="40" font-size="20" font-weight="700" fill="#1b1d24">How one 30 fps output frame is made from a 600 fps recording</text>
+
+  <!-- recorded frames -->
+  <text x="30" y="82" font-size="14" fill="#4a4f5c">Recorded frames (600 fps)</text>
+  <g id="frames">
+    <rect x="30" y="95" width="26" height="40" rx="3" fill="#d9dce3"/>
+    <rect x="62" y="95" width="26" height="40" rx="3" fill="#d9dce3"/>
+    <rect x="94" y="95" width="26" height="40" rx="3" fill="#d9dce3"/>
+    <rect x="126" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="158" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="190" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="222" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="254" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="286" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="318" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="350" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="382" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="414" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="446" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="478" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="510" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="542" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="574" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="606" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="638" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="670" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="702" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="734" y="95" width="26" height="40" rx="3" fill="#4fc3f7"/>
+    <rect x="766" y="95" width="26" height="40" rx="3" fill="#d9dce3"/>
+    <rect x="798" y="95" width="26" height="40" rx="3" fill="#d9dce3"/>
+    <rect x="830" y="95" width="26" height="40" rx="3" fill="#d9dce3"/>
+    <rect x="862" y="95" width="26" height="40" rx="3" fill="#d9dce3"/>
+  </g>
+
+  <!-- bracket over the 20 frames -->
+  <path d="M126 150 v10 h634 v-10" fill="none" stroke="#1b1d24" stroke-width="2"/>
+  <line x1="443" y1="160" x2="443" y2="190" stroke="#1b1d24" stroke-width="2"/>
+  <text x="460" y="181" font-size="14" fill="#1b1d24">the 20 recorded frames inside 1/30 s, each weighted 1/20</text>
+
+  <!-- output -->
+  <rect x="363" y="196" width="160" height="56" rx="6" fill="#1b1d24"/>
+  <text x="443" y="222" font-size="15" font-weight="700" fill="#ffffff" text-anchor="middle">1 output frame</text>
+  <text x="443" y="242" font-size="13" fill="#c9ccd6" text-anchor="middle">= their average</text>
+
+  <text x="30" y="284" font-size="13" fill="#4a4f5c">Premiere's default (Frame Sampling) keeps only one of these frames and throws the other 19 away.</text>
+  <text x="30" y="306" font-size="13" fill="#4a4f5c">When the rates don't divide evenly (1130 fps → 37.7 frames per output frame), the two edge frames count only for the part inside the window.</text>
+</svg>

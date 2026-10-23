@@ -1,0 +1,5 @@
+# Link the C runtime statically so the plugins (which embed this library)
+# do not depend on the msvcp140/vcruntime140 a host happens to ship:
+# Premiere Pro 2023 bundles a 2015 runtime that newer builds crash against.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
