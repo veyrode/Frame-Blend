@@ -346,6 +346,14 @@ prSuiteError render_file(Instance& inst, const PrGPUFilterRenderParams* params, 
         *out_frame = nullptr;
         return suiteError_Fail;
     }
+    if (fb::debug::enabled()) {
+        // Memory: the readers' frames against the process as a whole.
+        PROCESS_MEMORY_COUNTERS_EX memory{};
+        K32GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory));
+        fb::debug::line("GPU_FILE id=%" PRIu64 " taps=%zu ms=%.1f process_private_mb=%llu %s", render_id, taps.size(),
+                        fb::debug::now_ms() - t_start, static_cast<unsigned long long>(memory.PrivateUsage >> 20),
+                        reader.stats().c_str());
+    }
 
     return suiteError_NoError;
 }

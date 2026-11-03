@@ -12,6 +12,8 @@
 #define NOMINMAX
 #include <windows.h>
 
+#include <psapi.h>
+
 #include "PrSDKGPUDeviceSuite.h"
 #include "PrSDKGPUFilter.h"
 #include "PrSDKMemoryManagerSuite.h"
@@ -46,9 +48,6 @@
 namespace {
 
 constexpr int64_t kTicksPerSecond = 254016000000LL;
-// Frames a reversed clip decodes ahead of its first displayed frame (the
-// reader warms up forward from the index it is given).
-constexpr int64_t kReverseWarmup = 240;
 // MediaNode::StreamTimeInterpolationType values: 0 Frame Sampling, 1 Frame
 // Blending, 2 Optical Flow (set through QE and read back, 2026-10-06).
 constexpr int kInterpolationFrameBlending = 1;
@@ -423,14 +422,6 @@ void open_file(Instance& inst) {
         return;
     }
     const fb::media::Info& info = inst.reader->info();
-    // Decode from where the clip starts right away. A reversed clip starts at
-    // the end of its range, and Premiere gives its in point from the file's end.
-    FbRational in_frames{};
-    if (fb_center_for_output_frame(info.fps, fb::rational(kTicksPerSecond, 1), fb::rational(0, 1),
-                                   fb::rational(inst.in_point, kTicksPerSecond), &in_frames) == FB_OK) {
-        const int64_t in_index = in_frames.num / in_frames.den;
-        inst.reader->prefetch(inst.backwards ? std::max<int64_t>(0, info.frames - in_index - kReverseWarmup) : in_index);
-    }
     inst.file_status = "decoding " + std::to_string(info.width) + "x" + std::to_string(info.height) + " fps=" +
                        fb::text(info.fps) + " frames=" + std::to_string(info.frames) +
                        " speed=" + std::to_string(inst.speed) + (inst.backwards ? " reversed" : "") +

@@ -11,6 +11,7 @@
 
 #include "frame_blend.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -35,8 +36,11 @@ struct Info {
 // memory of a CUDA context when one is given (uploads from it are direct
 // transfers that do not hold up the render), ordinary memory otherwise or
 // when page-locked memory runs out. Each block remembers which it is.
+// `bytes` counts the memory of one reader's frames (host buffers, cached or
+// pooled, and NVDEC surfaces it holds); all readers share one budget.
 struct HostMemory {
     void* cuda_context = nullptr;
+    mutable std::atomic<int64_t> bytes{0};
 };
 
 void* host_allocate(const HostMemory* memory, size_t bytes);
@@ -95,13 +99,16 @@ public:
     // Null beyond the file's end or after a decoding error.
     virtual std::shared_ptr<const Frame> get(int64_t index) = 0;
 
-    // Starts reading ahead from `index` before anything is requested (the
-    // clip's in point when the effect is applied), so playback starts warm.
-    virtual void prefetch(int64_t index) = 0;
-
     // Decoder statistics for the temporary logs.
     virtual std::string stats() const = 0;
 };
+
+// Memory held by every reader's frames, and the budget they share: a project
+// opens an effect instance, and so a reader, for every clip, and each one
+// caching frames on its own filled the memory of a 16 GB machine with 32
+// recordings (Premiere 2025, 2026-11-03).
+int64_t frame_memory_bytes();
+int64_t frame_memory_budget();
 
 // Loads the FFmpeg DLLs from the plugin's own folder (hosts do not search it).
 bool load_ffmpeg(std::string& error);

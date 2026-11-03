@@ -14,6 +14,7 @@ extern "C" {
 }
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <condition_variable>
 #include <cstring>
@@ -45,8 +46,25 @@ constexpr int64_t kSequentialGap = 64;   // a request at most this far past the 
 // and its requests then jump hundreds of frames ahead (0.3-0.8 s at 1130 fps,
 // Premiere 2023 host test 2026-10-22). Treating those jumps as scrubbing cut the
 // read-ahead to kScrubAhead, so every render waited for the frames it skipped.
-constexpr int64_t kWarmupFrames = 240;   // decoded from the clip's in point when a file is opened
 constexpr int64_t kReverseGap = 256;     // a run starting at most this far below the last one plays backwards
+// A project opens a reader for every recording on its timelines, so readers
+// decode nothing before a render asks (no warm-up at the clip's in point: with
+// 32 recordings that alone filled 16 GB). They share one budget
+// (frame_memory_budget): a reader that goes over it takes memory back from
+// readers nothing has asked for in kReleaseIdleMs. A reader idle for
+// kCloseIdleMs also closes its decoder (about 65 MB with frame threads at
+// 720p) and reopens it on the next request.
+constexpr uint64_t kReleaseIdleMs = 1000;
+constexpr uint64_t kCloseIdleMs = 3000;
+
+std::atomic<int64_t> g_frame_bytes{0};
+
+void account(const HostMemory* memory, int64_t delta) {
+    if (memory) {
+        memory->bytes += delta;
+    }
+    g_frame_bytes += delta;
+}
 
 // Snaps a container rate within 100 ppm of an integer or NTSC rate to it
 // (MP4 time bases can turn 720/1 into 720.046).
@@ -106,7 +124,17 @@ public:
         }
     }
 
+    // Frees the buffers kept for reuse.
+    void clear() {
+        std::vector<HostBuffer> dropped;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            dropped.swap(free_);
+        }
+    }
+
     bool pinned() const { return memory_.cuda_context != nullptr; }
+    HostMemory& memory() { return memory_; }
 
 private:
     static constexpr size_t kMaxFree = 48;
@@ -115,6 +143,16 @@ private:
     std::vector<HostBuffer> free_;
 };
 
+class FfmpegReader;
+
+// Open readers, for taking memory back from idle ones (take_back_memory).
+// Lock order: this mutex, then a reader's; a reader never takes it while
+// holding its own.
+std::mutex g_registry_mutex;
+std::set<FfmpegReader*> g_registry;
+
+void take_back_memory(FfmpegReader* self);
+
 class FfmpegReader final : public Reader {
 public:
     FfmpegReader(std::string path_utf8, void* cuda_context, void* pinned_context)
@@ -122,6 +160,10 @@ public:
           pool_(std::make_shared<BufferPool>(cuda_context ? nullptr : pinned_context)) {}
 
     ~FfmpegReader() override {
+        {
+            std::lock_guard<std::mutex> registry(g_registry_mutex);
+            g_registry.erase(this);
+        }
         {
             std::lock_guard<std::mutex> lock(mutex_);
             stop_ = true;
@@ -134,13 +176,45 @@ public:
 
     bool start(std::string& error) {
         worker_ = std::thread([this] { run(); });
-        std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait(lock, [this] { return opened_ || !open_error_.empty(); });
-        error = open_error_;
-        return opened_;
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            cv_.wait(lock, [this] { return opened_ || !open_error_.empty(); });
+            error = open_error_;
+            if (!opened_) {
+                return false;
+            }
+        }
+        std::lock_guard<std::mutex> registry(g_registry_mutex);
+        g_registry.insert(this);
+        return true;
     }
 
     const Info& info() const override { return info_; }
+
+    // Whether nothing has asked this reader for a frame recently; `last`
+    // orders the candidates, oldest first (0: never asked).
+    bool idle(uint64_t now, uint64_t& last, int64_t& bytes) const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        last = last_request_ms_;
+        bytes = pool_->memory().bytes;
+        return requests_.empty() && (last == 0 || now - last >= kReleaseIdleMs);
+    }
+
+    // Drops the cached frames (those a render still holds are freed when it
+    // lets go of them), stops reading ahead and closes the decoder.
+    void release() {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (auto it = cache_.begin(); it != cache_.end();) {
+                it = requested(it->first) || it->first == producing_ ? std::next(it) : cache_.erase(it);
+            }
+            target_ = std::min(target_, latest_);
+            close_decoder_ = true;
+            ++releases_;
+        }
+        pool_->clear();
+        cv_.notify_all();
+    }
 
     std::shared_ptr<const Frame> get(int64_t index) override {
         std::unique_lock<std::mutex> lock(mutex_);
@@ -148,7 +222,8 @@ public:
             return nullptr;
         }
         requests_.insert(index);
-        used_ = true;
+        last_request_ms_ = last_activity_ms_ = GetTickCount64();
+        close_decoder_ = false;
         // Renders running in parallel interleave slightly, so a run also
         // continues with requests a little behind its end.
         const bool continues = index >= run_start_ && index <= run_end_ + playback_gap_;
@@ -172,27 +247,14 @@ public:
         return it == cache_.end() ? nullptr : it->second;
     }
 
-    // Only a reader that has not been used yet warms up: Premiere recreates
-    // the effect instances of every clip after each timeline edit, and those
-    // must neither move decoding back to the in point nor drop what is cached.
-    void prefetch(int64_t index) override {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (used_ || index < 0) {
-            return;
-        }
-        used_ = true;
-        latest_ = index;
-        run_start_ = index;
-        run_end_ = index;
-        target_ = index + std::min(read_ahead_, kWarmupFrames);
-        cv_.notify_all();
-    }
-
     std::string stats() const override {
         std::lock_guard<std::mutex> lock(mutex_);
         return "decoded=" + std::to_string(decoded_) + " seeks=" + std::to_string(seeks_) +
                " cached=" + std::to_string(cache_.size()) + "/" + std::to_string(capacity_) +
                " ahead=" + std::to_string(next_ - latest_) + " nvdec=" + std::to_string(info_.nvdec ? 1 : 0) +
+               " held_mb=" + std::to_string(pool_->memory().bytes >> 20) +
+               " all_readers_mb=" + std::to_string(g_frame_bytes >> 20) + "/" + std::to_string(frame_memory_budget() >> 20) +
+               " releases=" + std::to_string(releases_) + " decoder_opens=" + std::to_string(decoder_opens_) +
                (error_.empty() ? "" : " error=" + error_);
     }
 
@@ -211,29 +273,50 @@ private:
         while (ok) {
             int64_t want = -1;
             bool requested = false;
+            bool close = false;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
-                cv_.wait(lock, [&] {
+                for (;;) {
                     drop_stale();
-                    return stop_ || !pending().empty() || (next_ <= target_ && end_ < 0 && cache_.size() < capacity_);
-                });
+                    if (stop_ || !pending().empty() || reading_ahead()) {
+                        break;
+                    }
+                    if (codec_ && (close_decoder_ || GetTickCount64() - last_activity_ms_ >= kCloseIdleMs)) {
+                        close = true;
+                        break;
+                    }
+                    if (codec_) {
+                        cv_.wait_for(lock, std::chrono::milliseconds(500));
+                    } else {
+                        cv_.wait(lock);
+                    }
+                }
                 if (stop_) {
                     break;
                 }
-                const std::set<int64_t> missing = pending();
-                requested = !missing.empty();
-                // Read ahead from the latest request, never from stale positions.
-                want = requested ? *missing.begin() : std::max(next_, latest_);
-                producing_ = want;
+                if (!close) {
+                    const std::set<int64_t> missing = pending();
+                    requested = !missing.empty();
+                    // Read ahead from the latest request, never from stale positions.
+                    want = requested ? *missing.begin() : std::max(next_, latest_);
+                    producing_ = want;
+                }
+            }
+            if (close) {
+                close_codec();
+                pool_->clear();
+                continue;
             }
             const bool ok_frame = produce(want);
-            std::lock_guard<std::mutex> lock(mutex_);
-            producing_ = -1;
-            if (!ok_frame && requested && end_ < 0) {
-                failed_ = true;  // a requested frame cannot be decoded
-            }
-            if (!ok_frame && !requested) {
-                target_ = latest_;  // stop reading ahead until the next request
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                producing_ = -1;
+                if (!ok_frame && requested && end_ < 0) {
+                    failed_ = true;  // a requested frame cannot be decoded
+                }
+                if (!ok_frame && !requested) {
+                    target_ = latest_;  // stop reading ahead until the next request
+                }
             }
             cv_.notify_all();
         }
@@ -246,6 +329,12 @@ private:
         avcodec_free_context(&codec_);
         avformat_close_input(&format_);
         av_buffer_unref(&device_);
+    }
+
+    // Whether the worker should decode ahead of the latest request (caller
+    // holds the mutex).
+    bool reading_ahead() const {
+        return next_ <= target_ && end_ < 0 && cache_.size() < capacity_;
     }
 
     std::set<int64_t> pending() const {
@@ -312,9 +401,7 @@ private:
             error = "no frame rate";
             return false;
         }
-        codec_ = avcodec_alloc_context3(decoder);
-        avcodec_parameters_to_context(codec_, stream->codecpar);
-        codec_->pkt_timebase = time_base_;
+        decoder_ = decoder;
         if (cuda_context_) {
             cuda_stream_ = fb::gpu::cuda_create_stream(cuda_context_);
             device_ = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_CUDA);
@@ -322,20 +409,14 @@ private:
                 auto* hw = static_cast<AVCUDADeviceContext*>(reinterpret_cast<AVHWDeviceContext*>(device_->data)->hwctx);
                 hw->cuda_ctx = static_cast<CUcontext>(cuda_context_);
                 hw->stream = static_cast<CUstream>(cuda_stream_);
-                if (av_hwdevice_ctx_init(device_) == 0) {
-                    codec_->hw_device_ctx = av_buffer_ref(device_);
-                    codec_->get_format = pick_cuda;
-                } else {
+                if (av_hwdevice_ctx_init(device_) != 0) {
                     av_buffer_unref(&device_);
                 }
+            } else {
+                av_buffer_unref(&device_);
             }
         }
-        if (!codec_->hw_device_ctx) {
-            codec_->thread_count = 0;  // all cores
-            codec_->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
-        }
-        if ((r = avcodec_open2(codec_, decoder, nullptr)) < 0) {
-            error = "cannot open decoder: " + av_error(r);
+        if (!open_codec(error)) {
             return false;
         }
         frame_ = av_frame_alloc();
@@ -360,10 +441,47 @@ private:
             return false;
         }
         const double frame_bytes = 1.5 * info_.width * info_.height;
+        const double own_budget = info_.nvdec ? kDeviceBudgetBytes : pool_->pinned() ? kPinnedBudgetBytes : kHostBudgetBytes;
         std::lock_guard<std::mutex> lock(mutex_);
-        capacity_ = static_cast<size_t>(std::max(64.0, (info_.nvdec ? kDeviceBudgetBytes : pool_->pinned() ? kPinnedBudgetBytes : kHostBudgetBytes) / frame_bytes));
+        capacity_ = static_cast<size_t>(
+            std::max(64.0, std::min(own_budget, static_cast<double>(frame_memory_budget())) / frame_bytes));
         read_ahead_ = static_cast<int64_t>(capacity_ * 6 / 10);
+        last_activity_ms_ = GetTickCount64();
         return true;
+    }
+
+    // Worker thread only: the decoder, closed while the reader is idle.
+    bool open_codec(std::string& error) {
+        codec_ = avcodec_alloc_context3(decoder_);
+        if (!codec_) {
+            error = "cannot allocate the decoder";
+            return false;
+        }
+        avcodec_parameters_to_context(codec_, format_->streams[stream_]->codecpar);
+        codec_->pkt_timebase = time_base_;
+        if (device_) {
+            codec_->hw_device_ctx = av_buffer_ref(device_);
+            codec_->get_format = pick_cuda;
+        } else {
+            codec_->thread_count = 0;  // all cores
+            codec_->thread_type = FF_THREAD_FRAME | FF_THREAD_SLICE;
+        }
+        const int r = avcodec_open2(codec_, decoder_, nullptr);
+        if (r < 0) {
+            avcodec_free_context(&codec_);
+            error = "cannot open decoder: " + av_error(r);
+            return false;
+        }
+        ++decoder_opens_;
+        return true;
+    }
+
+    void close_codec() {
+        avcodec_free_context(&codec_);
+        draining_ = false;
+        std::lock_guard<std::mutex> lock(mutex_);
+        need_seek_ = true;  // the demuxer is wherever the old decoder left it
+        close_decoder_ = false;
     }
 
     // 1: a frame in frame_; 0: end of stream; -1: error.
@@ -440,7 +558,10 @@ private:
             frame->luma = reinterpret_cast<unsigned long long>(held->data[0]);
             frame->chroma = reinterpret_cast<unsigned long long>(held->data[1]);
             frame->pitch = held->linesize[0];
-            frame->hold = std::shared_ptr<void>(held, [](void* p) {
+            const int64_t surface_bytes = static_cast<int64_t>(held->linesize[0]) * info_.height * 3 / 2;
+            account(&pool_->memory(), surface_bytes);
+            frame->hold = std::shared_ptr<void>(held, [pool = pool_, surface_bytes](void* p) {
+                account(&pool->memory(), -surface_bytes);
                 AVFrame* f = static_cast<AVFrame*>(p);
                 av_frame_free(&f);
             });
@@ -450,15 +571,20 @@ private:
             return false;
         }
         av_frame_unref(frame_);
-        std::lock_guard<std::mutex> lock(mutex_);
-        ++decoded_;
-        if (next_ > 0 && index > next_) {
-            holds_[next_] = Hold{index, next_ - 1};
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ++decoded_;
+            if (next_ > 0 && index > next_) {
+                holds_[next_] = Hold{index, next_ - 1};
+            }
+            next_ = index + 1;
+            cache_[index] = std::move(frame);
+            evict(index);
         }
-        next_ = index + 1;
-        cache_[index] = std::move(frame);
-        evict(index);
         cv_.notify_all();
+        if (g_frame_bytes > frame_memory_budget()) {
+            take_back_memory(this);
+        }
         return true;
     }
 
@@ -503,7 +629,15 @@ private:
             if (cache_.count(index)) {
                 return true;
             }
-            seek = index < next_ || index > next_ + forward_decode_;
+            seek = need_seek_ || index < next_ || index > next_ + forward_decode_;
+        }
+        if (!codec_) {
+            std::string error;
+            if (!open_codec(error)) {
+                std::lock_guard<std::mutex> lock(mutex_);
+                error_ = error;
+                return false;
+            }
         }
         // A seek lands on a keyframe at or before the target; if the decoder
         // still resumes past the frame, seek again further back.
@@ -534,6 +668,7 @@ private:
         draining_ = false;
         std::lock_guard<std::mutex> lock(mutex_);
         ++seeks_;
+        need_seek_ = false;
         next_ = -1;
         end_ = -1;
         return true;
@@ -623,7 +758,6 @@ private:
     int64_t producing_ = -1;  // frame the worker is currently decoding towards
     int64_t run_start_ = 0;   // current ascending run of requests
     int64_t run_end_ = -1;
-    bool used_ = false;       // requested or warmed up already
     bool backward_ = false;   // requests move towards the file's start (reversed clip)
     size_t capacity_ = 112;
     int64_t read_ahead_ = 64;
@@ -640,7 +774,47 @@ private:
     std::shared_ptr<BufferPool> pool_;
     uint64_t decoded_ = 0;
     uint64_t seeks_ = 0;
+    // Sharing the memory budget (see kReleaseIdleMs).
+    const AVCodec* decoder_ = nullptr;
+    bool need_seek_ = false;         // the decoder was reopened: the demuxer must seek first
+    bool close_decoder_ = false;     // release(): close the decoder once idle
+    uint64_t last_request_ms_ = 0;   // GetTickCount64 of the last get(); 0: never asked
+    uint64_t last_activity_ms_ = 0;  // ... of the last get()
+    uint64_t releases_ = 0;
+    std::atomic<uint64_t> decoder_opens_{0};
 };
+
+// Over the budget: releases the idle readers holding memory, the one asked
+// least recently first (never asked: first of all), until all
+// readers are back under the budget. Readers in use are left alone, so a few
+// clips playing together can go over it, each within its own capacity.
+void take_back_memory(FfmpegReader* self) {
+    std::lock_guard<std::mutex> registry(g_registry_mutex);
+    std::set<FfmpegReader*> released;
+    const uint64_t now = GetTickCount64();
+    while (g_frame_bytes > frame_memory_budget()) {
+        FfmpegReader* victim = nullptr;
+        uint64_t victim_last = 0;
+        int64_t victim_bytes = 0;
+        for (FfmpegReader* reader : g_registry) {
+            uint64_t last = 0;
+            int64_t bytes = 0;
+            if (reader == self || released.count(reader) || !reader->idle(now, last, bytes) || bytes <= 0) {
+                continue;
+            }
+            if (!victim || last < victim_last || (last == victim_last && bytes > victim_bytes)) {
+                victim = reader;
+                victim_last = last;
+                victim_bytes = bytes;
+            }
+        }
+        if (!victim) {
+            return;
+        }
+        victim->release();
+        released.insert(victim);
+    }
+}
 
 std::mutex g_readers_mutex;
 std::map<std::tuple<std::wstring, void*, void*>, std::weak_ptr<Reader>> g_readers;
@@ -659,8 +833,30 @@ std::string narrow(const std::wstring& wide) {
 // Every block starts with a header saying whether it is page-locked (the
 // first frames may get page-locked memory and later ones ordinary memory if
 // the system runs short).
+// The header also holds the block's size, for the memory accounting.
 namespace {
 constexpr size_t kHostHeader = 64;  // keeps the data 64-byte aligned
+struct HostHeader {
+    bool pinned;
+    size_t bytes;
+};
+static_assert(sizeof(HostHeader) <= kHostHeader, "host block header");
+}
+
+int64_t frame_memory_bytes() {
+    return g_frame_bytes;
+}
+
+// An eighth of the physical memory, from 512 MB to 2 GB: 2 GB on 16 GB. One
+// reader alone may hold up to its own capacity (kPinnedBudgetBytes...).
+int64_t frame_memory_budget() {
+    static const int64_t budget = [] {
+        MEMORYSTATUSEX status{};
+        status.dwLength = sizeof(status);
+        const int64_t total = GlobalMemoryStatusEx(&status) ? static_cast<int64_t>(status.ullTotalPhys) : 0;
+        return std::clamp<int64_t>(total / 8, 512LL << 20, 2048LL << 20);
+    }();
+    return budget;
 }
 
 void* host_allocate(const HostMemory* memory, size_t bytes) {
@@ -670,7 +866,8 @@ void* host_allocate(const HostMemory* memory, size_t bytes) {
     if (!block) {
         block = ::operator new(bytes + kHostHeader, std::align_val_t(kHostHeader));
     }
-    *static_cast<bool*>(block) = pinned;
+    *static_cast<HostHeader*>(block) = HostHeader{pinned, bytes};
+    account(memory, static_cast<int64_t>(bytes));
     return static_cast<uint8_t*>(block) + kHostHeader;
 }
 
@@ -679,7 +876,9 @@ void host_free(const HostMemory* memory, void* p) {
         return;
     }
     void* block = static_cast<uint8_t*>(p) - kHostHeader;
-    if (*static_cast<bool*>(block)) {
+    const HostHeader header = *static_cast<HostHeader*>(block);
+    account(memory, -static_cast<int64_t>(header.bytes));
+    if (header.pinned) {
         fb::gpu::cuda_host_free(memory ? memory->cuda_context : nullptr, block);
     } else {
         ::operator delete(block, std::align_val_t(kHostHeader));
