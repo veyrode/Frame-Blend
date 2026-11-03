@@ -2,22 +2,26 @@
 
 **Real frame blending for Adobe Premiere Pro and After Effects.** Record at 240, 480, 600 or 1000+ fps, edit on a 30 or 60 fps timeline, and every output frame becomes the blend of all the recorded frames it covers: smooth, natural motion blur instead of choppy frames. The look matches VEGAS Pro's frame blending ("Smart Resample"), which Premiere doesn't have.
 
-![Without vs with Frame Blend, animated](docs/images/compare.gif)
+![Premiere default, Premiere Frame Blending and Frame Blend, animated](docs/images/compare.gif)
 
 > [!NOTE]
 > **This project is vibe coded.** The code was written by AI coding agents (**OpenAI Codex** and **Anthropic's Claude Code**), directed and tested by a human on real recordings. It works in the tests listed below, but read the code before relying on it, and expect rough edges.
 
 ## What it does
 
-Premiere Pro (with its default *Frame Sampling*) shows **one** recorded frame per output frame and throws the rest away: at 600 fps on a 30 fps timeline, 19 of every 20 frames are lost, and fast motion looks jerky. *Frame Blending* in Premiere only mixes two neighbouring frames, and *Optical Flow* invents frames and warps fast motion.
+Premiere Pro's options for high frame rate footage on a slower timeline:
 
-Frame Blend averages **all** the frames that fall inside each output frame:
+- **Frame Sampling** (the default) shows **one** recorded frame per output frame and throws the rest away: at 600 fps on a 30 fps timeline, 19 of every 20 frames are lost, and fast motion looks jerky.
+- **Frame Blending** (Premiere's own) is only applied when you **export**: while you play in the timeline you see sampled frames. And in our test it blended only about **half** of each output frame's time span (the smear is half as long as the motion during that frame).
+- **Optical Flow** invents in-between frames and warps fast motion.
 
-![One frame vs all twenty frames blended](docs/images/compare.png)
+Frame Blend averages **all** the recorded frames that fall inside each output frame, the full 1/30 s, both when you play and when you export:
+
+![Premiere default, Premiere Frame Blending (export) and Frame Blend](docs/images/compare.png)
+
+All three images are real **Premiere Pro 2026 exports** of the same 600 fps test clip on a 30 fps sequence, at the same frame: the clip's Time Interpolation set to *Frame Sampling*, then to *Frame Blending* without the plugin, then with Frame Blend. The spinning bar and the sliding square show the motion blur a real camera with a 360° shutter would capture over that 1/30 s.
 
 ![How one output frame is made](docs/images/how-it-works.svg)
-
-The left side is what a fast swing or a camera flick looks like when frames are dropped; the right side is the same moment with Frame Blend, as a real camera with a 360° shutter would have captured it.
 
 ## Install
 
