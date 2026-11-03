@@ -241,6 +241,8 @@ PF_Err render(PF_InData* in_data, PF_OutData* out_data, PF_LayerDef* output) {
     }
 
     if (fb::debug::enabled()) {
+        fb::debug::line("CPU_RENDER id=%" PRIu64 " appl=%d reading host clip info", render_id,
+                        static_cast<int>(in_data->appl_id));
         fb::debug::line("RENDER id=%" PRIu64 " host=premiere-cpu t_ms=%.3f current_time=%d time_step=%d time_scale=%u total_time=%d "
                         "src_fps=%s out_fps=%s center=%s size=%dx%d format=%s quality=%d %s",
                         render_id, t_start, in_data->current_time, in_data->time_step, in_data->time_scale, in_data->total_time,
@@ -614,12 +616,12 @@ PF_Err global_setup(PF_InData* in_data, PF_OutData* out_data) {
     fb::debug::flush();
     // Must match the PiPL (FrameBlendPiPL.r). Premiere ignores the SmartFX
     // flags and renders through PF_Cmd_RENDER.
-    static_assert(PF_VERSION(1, 4, 0, PF_Stage_DEVELOP, 0) == 655360, "PiPL AE_Effect_Version");
+    static_assert(PF_VERSION(1, 4, 1, PF_Stage_DEVELOP, 0) == 657408, "PiPL AE_Effect_Version");
     static_assert((PF_OutFlag_WIDE_TIME_INPUT | PF_OutFlag_NON_PARAM_VARY | PF_OutFlag_PIX_INDEPENDENT |
                    PF_OutFlag_DEEP_COLOR_AWARE) == 33555462, "PiPL AE_Effect_Global_OutFlags");
     static_assert((PF_OutFlag2_FLOAT_COLOR_AWARE | PF_OutFlag2_SUPPORTS_SMART_RENDER |
                    PF_OutFlag2_SUPPORTS_THREADED_RENDERING) == 134222848, "PiPL AE_Effect_Global_OutFlags_2");
-    out_data->my_version = PF_VERSION(1, 4, 0, PF_Stage_DEVELOP, 0);
+    out_data->my_version = PF_VERSION(1, 4, 1, PF_Stage_DEVELOP, 0);
     out_data->out_flags = PF_OutFlag_WIDE_TIME_INPUT | PF_OutFlag_NON_PARAM_VARY | PF_OutFlag_PIX_INDEPENDENT |
                           PF_OutFlag_DEEP_COLOR_AWARE;
     out_data->out_flags2 = PF_OutFlag2_FLOAT_COLOR_AWARE | PF_OutFlag2_SUPPORTS_SMART_RENDER |

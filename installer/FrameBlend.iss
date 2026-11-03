@@ -9,7 +9,7 @@
 ;   tools\sign_panel.ps1) in the machine-wide CEP extensions folder.
 ; The uninstaller and the licence texts go to Program Files\Frame Blend.
 
-#define AppVersion "1.4.0"
+#define AppVersion "1.4.1"
 #ifndef Repo
   #define Repo ".."
 #endif

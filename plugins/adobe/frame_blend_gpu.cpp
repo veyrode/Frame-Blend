@@ -596,6 +596,19 @@ prSuiteError render(PrGPUFilterInstance* data, const PrGPUFilterRenderParams* pa
     const double t_start = fb::debug::now_ms();
     const uint64_t render_id = ++g_render_id;
     auto* inst = static_cast<Instance*>(data->ioPrivatePluginData);
+    if (fb::debug::enabled()) {
+        // Which path renders this frame: "file" blends the recording, "pass"
+        // copies Premiere's frame (Time Interpolation is not Frame Blending),
+        // "host" blends the frames Premiere hands over.
+        fb::debug::line("GPU_RENDER id=%" PRIu64 " path=%s quality=%d downsample=%.2f,%.2f size=%ux%u clip_time=%lld "
+                        "frames=%zu",
+                        render_id, frame_count >= 1 && frames[0] && !blend_enabled(*inst) ? "pass"
+                                   : inst->reader                                        ? "file"
+                                                                                         : "host",
+                        static_cast<int>(params->inQuality), params->inDownsampleFactorX, params->inDownsampleFactorY,
+                        params->inRenderWidth, params->inRenderHeight, static_cast<long long>(params->inClipTime),
+                        static_cast<size_t>(frame_count));
+    }
     if (frame_count >= 1 && frames[0] && !blend_enabled(*inst)) {
         return render_passthrough(*inst, frames, out_frame);
     }

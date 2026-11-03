@@ -4,10 +4,10 @@
      Frame Blend effect, Time Interpolation set to Frame Blending). No window:
      each clip's Time Interpolation switches the blend.
      Installed signed (tools/sign_panel.ps1). -->
-<ExtensionManifest Version="7.0" ExtensionBundleId="com.frameblend.panel" ExtensionBundleVersion="1.4.0"
+<ExtensionManifest Version="7.0" ExtensionBundleId="com.frameblend.panel" ExtensionBundleVersion="1.4.1"
                    ExtensionBundleName="Frame Blend" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ExtensionList>
-    <Extension Id="com.frameblend.panel.auto" Version="1.4.0" />
+    <Extension Id="com.frameblend.panel.auto" Version="1.4.1" />
   </ExtensionList>
   <ExecutionEnvironment>
     <HostList>

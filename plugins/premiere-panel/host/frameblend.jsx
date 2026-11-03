@@ -144,13 +144,16 @@ function fbSetUp(seq, everything) {
     }
 }
 
-// Cheap signature of the active sequence: id and clip count per video track.
+// Cheap signature of the active sequence: id, frame rate and clip count per
+// video track. The frame rate is part of it because a sequence made with New
+// Sequence From Clip starts at the clip's rate (nothing to blend) and is often
+// switched to 30 or 60 fps afterwards; its clips must be set up then.
 function fbSignature() {
     var seq = app.project ? app.project.activeSequence : null;
     if (!seq) {
         return "";
     }
-    var s = seq.sequenceID;
+    var s = seq.sequenceID + "@" + seq.timebase;
     for (var t = 0; t < seq.videoTracks.numTracks; t++) {
         s += ":" + seq.videoTracks[t].clips.numItems;
     }

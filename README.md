@@ -22,7 +22,7 @@ The left side is what a fast swing or a camera flick looks like when frames are 
 ## Install
 
 1. Close Premiere Pro, After Effects and Media Encoder.
-2. Download `FrameBlend-Setup-1.4.0.exe` from the [Releases](../../releases) page and run it. Windows may warn about an "unknown publisher": the installer isn't code-signed. Click *More info › Run anyway*.
+2. Download `FrameBlend-Setup-1.4.1.exe` from the [Releases](../../releases) page and run it. Windows may warn about an "unknown publisher": the installer isn't code-signed. Click *More info › Run anyway*.
 3. Start Premiere Pro or After Effects.
 
 Uninstall from *Settings › Apps › Installed apps › Frame Blend*.
@@ -63,12 +63,12 @@ The blending core is Rust (`src/`), with a C interface (`include/frame_blend.h`)
 
 | | Version | Result |
 |---|---|---|
-| Premiere Pro | 2023 (23.4), 2025 (25.2) | exported frames match the reference renderer within 1/255 |
+| Premiere Pro | 2023 (23.4), 2025 (25.2), 2026 (26.5) | exported frames match the reference renderer within 1/255 |
 | After Effects | 2025 (25.2) | 8, 16, 32 bpc: matches the weighted sum of AE's own frames |
 | Playback | Premiere 2023, 1130 fps 720p recording on a 30 fps sequence | real time, no dropped frames after start; pause shows the blended frame instantly |
 | Hardware | Windows 11, Ryzen 5 5600, GeForce RTX 2060 (CUDA) | |
 
-Not tested yet: Premiere Pro 2020-2022, 2024, 2026; other After Effects versions; AMD and Intel GPUs (the OpenCL path is only checked by the parity tests); time remapping in After Effects.
+Not tested yet: Premiere Pro 2020-2022, 2024; other After Effects versions; AMD and Intel GPUs (the OpenCL path is only checked by the parity tests); time remapping in After Effects.
 
 ## Limitations
 

@@ -145,6 +145,8 @@ void line(const char* format, ...) {
     std::vfprintf(g_file, format, args);
     va_end(args);
     std::fputc('\n', g_file);
+    // Written through at once: when a host crashes, the last line shows where.
+    std::fflush(g_file);
 }
 
 void flush() {
