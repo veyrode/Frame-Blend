@@ -616,12 +616,12 @@ PF_Err global_setup(PF_InData* in_data, PF_OutData* out_data) {
     fb::debug::flush();
     // Must match the PiPL (FrameBlendPiPL.r). Premiere ignores the SmartFX
     // flags and renders through PF_Cmd_RENDER.
-    static_assert(PF_VERSION(1, 4, 1, PF_Stage_DEVELOP, 0) == 657408, "PiPL AE_Effect_Version");
+    static_assert(PF_VERSION(1, 4, 2, PF_Stage_DEVELOP, 0) == 659456, "PiPL AE_Effect_Version");
     static_assert((PF_OutFlag_WIDE_TIME_INPUT | PF_OutFlag_NON_PARAM_VARY | PF_OutFlag_PIX_INDEPENDENT |
                    PF_OutFlag_DEEP_COLOR_AWARE) == 33555462, "PiPL AE_Effect_Global_OutFlags");
     static_assert((PF_OutFlag2_FLOAT_COLOR_AWARE | PF_OutFlag2_SUPPORTS_SMART_RENDER |
                    PF_OutFlag2_SUPPORTS_THREADED_RENDERING) == 134222848, "PiPL AE_Effect_Global_OutFlags_2");
-    out_data->my_version = PF_VERSION(1, 4, 1, PF_Stage_DEVELOP, 0);
+    out_data->my_version = PF_VERSION(1, 4, 2, PF_Stage_DEVELOP, 0);
     out_data->out_flags = PF_OutFlag_WIDE_TIME_INPUT | PF_OutFlag_NON_PARAM_VARY | PF_OutFlag_PIX_INDEPENDENT |
                           PF_OutFlag_DEEP_COLOR_AWARE;
     out_data->out_flags2 = PF_OutFlag2_FLOAT_COLOR_AWARE | PF_OutFlag2_SUPPORTS_SMART_RENDER |

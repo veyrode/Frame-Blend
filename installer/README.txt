@@ -1,4 +1,4 @@
-Frame Blend 1.4.1
+Frame Blend 1.4.2
 =================
 
 Frame Blend turns high frame rate recordings (240, 480, 600, 1000+ fps) into

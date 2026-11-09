@@ -26,7 +26,7 @@ All three images are real **Premiere Pro 2026 exports** of the same 600 fps test
 ## Install
 
 1. Close Premiere Pro, After Effects and Media Encoder.
-2. Download `FrameBlend-Setup-1.4.1.exe` from the [Releases](../../releases) page and run it. Windows may warn about an "unknown publisher": the installer isn't code-signed. Click *More info › Run anyway*.
+2. Download `FrameBlend-Setup-1.4.2.exe` from the [Releases](../../releases) page and run it. Windows may warn about an "unknown publisher": the installer isn't code-signed. Click *More info › Run anyway*.
 3. Start Premiere Pro or After Effects.
 
 Uninstall from *Settings › Apps › Installed apps › Frame Blend*.
@@ -67,9 +67,10 @@ The blending core is Rust (`src/`), with a C interface (`include/frame_blend.h`)
 
 | | Version | Result |
 |---|---|---|
-| Premiere Pro | 2023 (23.4), 2025 (25.2), 2026 (26.5) | exported frames match the reference renderer within 1/255 |
+| Premiere Pro | 2023 (23.4), 2025 (25.2, 25.6), 2026 (26.5) | exported frames match the reference renderer within 1/255 |
 | After Effects | 2025 (25.2) | 8, 16, 32 bpc: matches the weighted sum of AE's own frames |
 | Playback | Premiere 2023, 1130 fps 720p recording on a 30 fps sequence | real time, no dropped frames after start; pause shows the blended frame instantly |
+| Large project | Premiere 2025 (25.6), 32 different 480-960 fps 720p recordings | opens without running out of memory; Frame Blend's decoded frames stay within 2 GB (1.4.1 filled 16 GB and crashed) |
 | Hardware | Windows 11, Ryzen 5 5600, GeForce RTX 2060 (CUDA) | |
 
 Not tested yet: Premiere Pro 2020-2022, 2024; other After Effects versions; AMD and Intel GPUs (the OpenCL path is only checked by the parity tests); time remapping in After Effects.
@@ -79,6 +80,7 @@ Not tested yet: Premiere Pro 2020-2022, 2024; other After Effects versions; AMD 
 - **Windows only.** No macOS build.
 - **Premiere needs GPU acceleration.** With the software-only renderer, Premiere hands the effect only one frame per output frame, so there is nothing to blend.
 - **Jumping far across the timeline** can take up to about half a second to show the first blended frame: decoding starts from the recording's last keyframe. A keyframe interval of 1 s in your recorder (OBS: *Keyframe Interval*) keeps it short.
+- **Many high frame rate recordings use a lot of memory in Premiere itself:** opening a project with 32 of them took Premiere 2025 to about 13 GB for a minute, with or without Frame Blend. Frame Blend keeps its own decoded frames within an eighth of your RAM (at most 2 GB).
 - **Very high frame rate H.264** (level 6.1, such as 1000+ fps at 720p) can't use the GPU decoder on many cards, so it decodes on the CPU, and Premiere does too: exports are slower than real time on mid-range CPUs.
 - DaVinci Resolve isn't supported: Resolve gives effects frames already conformed to the timeline's rate, so there is nothing left to blend.
 
